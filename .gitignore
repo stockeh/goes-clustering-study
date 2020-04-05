@@ -1,0 +1,20 @@
+# Spark build files
+project*
+target*
+
+# Datasets
+**/data/MNIST/
+
+# Eclipse
+.classpath
+.project
+.settings/
+ 
+# Intellij
+.idea/
+*.iml
+*.iws
+ 
+# Mac
+.DS_Store
+ 
