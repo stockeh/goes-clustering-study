@@ -1,6 +1,6 @@
 # Spark build files
-project*
-target*
+project/
+target/
 
 # Datasets
 **/data/MNIST/
