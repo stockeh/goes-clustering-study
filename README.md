@@ -2,6 +2,8 @@
 
 Unsupervised learning techniques performed in this study include:
 
-1. kMeans Complete
-2. kMeans + Autoencoder
-3. Deep Embedded Clustering
+1. [kMeans Complete](kmeans-complete)
+2. [kMeans + Autoencoder](kmeans-autoencoder)
+3. [Deep Embedded Clustering](deep-embedded-clustering)
+
+The [examples](examples) directory contains default distributed PyTorch and Apache Spark files.
