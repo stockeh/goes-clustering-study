@@ -2,6 +2,6 @@
 
 Unsupervised learning techniques performed in this study include:
 
-1. _k_Means Complete
-2. _k_Means + Autoencoder
+1. kMeans Complete
+2. kMeans + Autoencoder
 3. Deep Embedded Clustering
