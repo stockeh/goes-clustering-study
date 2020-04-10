@@ -4,6 +4,8 @@ target/
 
 # Datasets
 **/data/MNIST/
+**/data/eastpac/
+**/data/natlantic/
 checkpoint*.pth.tar
 
 # Eclipse
