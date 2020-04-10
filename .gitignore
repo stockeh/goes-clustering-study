@@ -4,6 +4,7 @@ target/
 
 # Datasets
 **/data/MNIST/
+checkpoint*.pth.tar
 
 # Eclipse
 .classpath
