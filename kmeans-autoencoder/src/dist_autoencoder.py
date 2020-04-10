@@ -15,7 +15,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from torchvision import datasets, transforms
+from torchvision import transforms
+
+import goesdataset as gd
 
 best_acc1 = 0
 
@@ -39,7 +41,7 @@ def main():
     parser.add_argument('--epochs', default=1, type=int, metavar='N',
         help='number of total epochs to run')
 
-    parser.add_argument("--data", type=str, default="../../examples/torch/data",
+    parser.add_argument("--data", type=str, default="../data/",
         help="Directory containing the data to be run on.")
 
     parser.add_argument('--cuda', type=bool, default=False,
@@ -79,11 +81,11 @@ def setup(args):
 
 
 def load_dataset(args):
-    train_set = datasets.MNIST(args.data, train=True, download=True,
-                                transform = transforms.Compose([
-                                transforms.ToTensor(),
-                                transforms.Normalize((0.1307,), (0.3081,))
-                                ]))
+    train_set = gd.GOESDataset(root_dir=args.data, channels=True,
+                               transform=transforms.Compose([
+                                    gd.Square(), gd.Normalize(), gd.ToTensor()
+                               ]))
+                               
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
     else:
@@ -91,7 +93,7 @@ def load_dataset(args):
 
     train_loader = torch.utils.data.DataLoader(
         train_set, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=4, pin_memory=True, sampler=train_sampler)
+        num_workers=4, sampler=train_sampler)
 
     return train_loader, train_sampler
 
