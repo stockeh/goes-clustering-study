@@ -4,4 +4,4 @@ This is the part of our project where we do a direct k-means clustering on three
 
 This will be done on a per-pixel basis, treating each pixel as an independent sample.
 
-Our plan is to do this in Java using Spark.
+Our plan is to do this in Scala using Spark.
