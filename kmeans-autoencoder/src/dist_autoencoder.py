@@ -15,6 +15,7 @@ import torch.distributed as dist
 
 from torchvision import transforms
 
+import visualizations as viz
 import goesdataset as gd
 import models
 
@@ -31,7 +32,7 @@ def main():
         help="Global rank of this process. Pass in 0 for master.")
 
     parser.add_argument('--dist-conn', default='bentley:15516', type=str,
-                        help='host:port used to set up distributed training')
+                        help='master host:port used to set up distributed training')
 
     parser.add_argument('-b', '--batch-size', type=int, default=25,
         metavar='N',
@@ -44,7 +45,7 @@ def main():
         help="Directory containing the data to be run on.")
 
     parser.add_argument('--cuda', type=bool, default=False,
-        help='True to use CUDA on GPU.')
+        help='True to use CUDA on GPU. WARN: only implemented on CPU!.')
 
     parser.add_argument('-d', '--latent-dim', type=int, default=10,
         help='Dimensionality of the latent vector.')
@@ -194,7 +195,8 @@ def main_worker(args):
         # }, is_best)
 
     if dist.get_rank() == 0:
-        nnet.visualize(train_loader, args.channels[0])
+        print('HERE')
+        viz.visualize(nnet, train_loader, args.channels[0])
 
 
 def train(train_loader, nnet, criterion, optimizer, epoch, args):

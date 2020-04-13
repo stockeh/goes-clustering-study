@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-import visualizations
-
 class AutoencoderLinear(nn.Module):
     """Linear Autoencoder"""
 
@@ -19,9 +17,7 @@ class AutoencoderLinear(nn.Module):
         self.latent_dim = latent_dim
 
         self.encoder = nn.Sequential(
-            nn.Linear(in_features=self.X_shape, out_features=1028),
-            nn.Tanh(),
-            nn.Linear(in_features=1028, out_features=512),
+            nn.Linear(in_features=self.X_shape, out_features=512),
             nn.Tanh(),
             nn.Linear(in_features=512, out_features=256),
             nn.Tanh(),
@@ -38,9 +34,7 @@ class AutoencoderLinear(nn.Module):
             nn.Tanh(),
             nn.Linear(in_features=256, out_features=512),
             nn.Tanh(),
-            nn.Linear(in_features=512, out_features=1028),
-            nn.Tanh(),
-            nn.Linear(in_features=1028, out_features=self.X_shape),
+            nn.Linear(in_features=512, out_features=self.X_shape),
             nn.Sigmoid()
         )
 
@@ -48,25 +42,6 @@ class AutoencoderLinear(nn.Module):
         Z = self.encoder(X)
         Y = self.decoder(Z)
         return Y
-
-    def visualize(self, train_loader, ch):
-        # turn off gradients and other aspects of training
-        self.eval()
-        with torch.no_grad():
-            n_items = len(train_loader.dataset)
-            r = 3 if n_items >= 3 else n_items
-            for i in range(r):
-                n = np.random.randint(0, n_items)
-                o_filename = f'../media/{str(i)}_original'
-                X = train_loader.dataset[n][ch:ch+1,...]
-                dims = X.shape
-                visualizations.save_1(X, o_filename, f'X, f: {n}, [{ch}]')
-
-                m_filename = f'../media/{str(i)}_modified'
-                X = X.reshape(1, np.product(X.shape[0:]))
-                Y = self.forward(X).detach().numpy().reshape(dims)
-                visualizations.save_1(Y, m_filename, f'Y, f: {n}, [{ch}]')
-
 
 
 class Autoencoder(nn.Module):
