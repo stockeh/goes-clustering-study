@@ -91,7 +91,7 @@ def load_dataset(args):
 
     train_loader = torch.utils.data.DataLoader(
         train_set, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=4, pin_memory=True, sampler=train_sampler)
+        num_workers=4, sampler=train_sampler)
 
     return train_loader, train_sampler
 
