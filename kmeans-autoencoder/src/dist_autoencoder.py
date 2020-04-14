@@ -150,12 +150,12 @@ def main_worker(args):
         is_best = loss < best_loss
         best_loss = min(loss, best_loss)
 
-        save_checkpoint(args, {
-            'epoch': epoch + 1,
-            'state_dict': nnet.state_dict(),
-            'best_loss' : best_loss,
-            'optimizer' : optimizer.state_dict(),
-        }, is_best)
+        # save_checkpoint(args, {
+        #     'epoch': epoch + 1,
+        #     'state_dict': nnet.state_dict(),
+        #     'best_loss' : best_loss,
+        #     'optimizer' : optimizer.state_dict(),
+        # }, is_best)
 
     if dist.get_rank() == 0:
         print('Finished. Saving media figures.')
@@ -188,11 +188,8 @@ def train(train_loader, nnet, criterion, optimizer, epoch, args):
             X = X.cuda(non_blocking=True)
 
         if 'vae' in args.model:
-            # 'loss': loss, 'Reconstruction_Loss':recons_loss, 'KLD':-kld_loss
-            Y, mu, log_var = nnet(X)
-            mse = criterion(Y, X)
-            kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
-            loss = mse + kld_loss
+            results = nnet(X)
+            loss = nnet.loss_function(*results)
         else:
             Y = nnet(X)
             loss = torch.sqrt(criterion(Y, X))

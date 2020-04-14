@@ -4,8 +4,9 @@ import numpy as np
 
 from typing import List
 from torch import tensor as Tensor
+from torch.nn import functional as F
 
-class AutoencoderLinear(nn.Module):
+class LinearAutoencoder(nn.Module):
     """Linear Autoencoder"""
 
     def __init__(self,
@@ -17,7 +18,7 @@ class AutoencoderLinear(nn.Module):
         :in_shape: input shape
         :hidden_dims: units in conv layers, e.g., [512, 256, 128, 10]
         """
-        super(AutoencoderLinear, self).__init__()
+        super(LinearAutoencoder, self).__init__()
 
         if hidden_dims is None:
             hidden_dims = [512, 256, 128, 10]
@@ -63,7 +64,7 @@ class AutoencoderLinear(nn.Module):
         return Y
 
 
-class AutoencoderCNN(nn.Module):
+class ColvolutionalAutoencoder(nn.Module):
     """Colvolutional Autoencoder"""
 
     def __init__(self, in_shape: List,
@@ -79,7 +80,7 @@ class AutoencoderCNN(nn.Module):
         :ker_str_pad: size of (kernels, stride, padding)
                       e.g., [(10, 3, 1), (8, 2, 0), (3, 3, 0)]
         """
-        super(AutoencoderCNN, self).__init__()
+        super(ColvolutionalAutoencoder, self).__init__()
 
         if hidden_dims is None:
             hidden_dims = [4, 8, 16]
@@ -158,10 +159,12 @@ class AutoencoderCNN(nn.Module):
         return Y
 
 
-class AutoencoderVariational(torch.nn.Module):
-    """WARN: NOT FINISHED IMPLEMENTING.
+class VariationalAutoencoder(torch.nn.Module):
+    """Unfortunately the VAE does not work particularly well on data
+    where n_samples << dimensionality.
     Modified from:
     https://github.com/AntixK/PyTorch-VAE/blob/master/models/vanilla_vae.py
+    https://github.com/pytorch/examples/blob/master/vae/main.py
     """
     def __init__(self,
                  in_shape: List,
@@ -176,7 +179,7 @@ class AutoencoderVariational(torch.nn.Module):
         :ker_str_pad: size of (kernels, stride, padding)
                       e.g., [(10, 3, 1), (8, 2, 0), (3, 3, 0)]
         """
-        super(AutoencoderVariational, self).__init__()
+        super(VariationalAutoencoder, self).__init__()
 
         if hidden_dims is None:
             hidden_dims = [32, 64, 128]
@@ -265,8 +268,8 @@ class AutoencoderVariational(torch.nn.Module):
         """
         Maps the given latent codes
         onto the image space.
-        :param Z: (Tensor) [B x D]
-        :return: (Tensor) [B x C x H x W]
+        :param Z: [B x D]
+        :return: [B x C x H x W]
         """
         Y = self.decoder_input(Z)
         Y = Y.view(-1, self.hidden_dims[0], self.output_size_previous, self.output_size_previous)
@@ -278,29 +281,56 @@ class AutoencoderVariational(torch.nn.Module):
         """
         Reparameterization trick to sample from N(mu, var) from
         N(0,1).
-        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
-        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
-        :return: (Tensor) [B x D]
+        :param mu: Mean of the latent Gaussian [B x D]
+        :param logvar: Standard deviation of the latent Gaussian [B x D]
+        :return: [B x D]
         """
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return eps * std + mu
 
+    def loss_function(self, *args, **kwargs) -> dict:
+        """
+        Computes the VAE loss function.
+        KL(N(\mu, \sigma), N(0, 1)) = \log \frac{1}{\sigma} + \frac{\sigma^2 + \mu^2}{2} - \frac{1}{2}
+        :param args:
+        :param kwargs:
+        :return:
+        """
+        Y = args[0]
+        X = args[1]
+        mu = args[2]
+        log_var = args[3]
+
+        MSE = F.mse_loss(Y, X)
+        # see Appendix B from VAE paper:
+        # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
+        # https://arxiv.org/abs/1312.6114
+        # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        KLD = -0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp())
+
+        return MSE + KLD
+
     def forward(self, X: Tensor) -> List[Tensor]:
+        """
+        Computes the forward pass through the network
+        :param X: input sample [B x C x H x W]
+        :return: Y, X, mu, log_var
+        """
         mu, log_var = self.encode(X)
         Z = self.reparameterize(mu, log_var)
-        return [self.decode(Z), mu, log_var]
+        return [self.decode(Z), X, mu, log_var]
 
 
 def get_model(train_loader, args):
     if 'cnn' in args.model:
         X_shape = train_loader.dataset[0][args.channels, ...].shape
-        return AutoencoderCNN(X_shape, args.latent_dim)
+        return ColvolutionalAutoencoder(X_shape, args.latent_dim)
     if 'vae' in args.model:
         X_shape = train_loader.dataset[0][args.channels, ...].shape
-        return AutoencoderVariational(X_shape, args.latent_dim)
+        return VariationalAutoencoder(X_shape, args.latent_dim)
     elif 'lin' in args.model:
         X_shape = np.product(train_loader.dataset[0][args.channels, ...].shape)
-        return AutoencoderLinear(X_shape)
+        return LinearAutoencoder(X_shape)
     else:
         print(f'WARN: {args.model} is not supported.')
