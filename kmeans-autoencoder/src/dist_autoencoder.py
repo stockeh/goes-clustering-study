@@ -14,44 +14,50 @@ import torch.nn as nn
 import torch.distributed as dist
 
 from torchvision import transforms
+from contextlib import nullcontext
 
 import visualizations as viz
 import goesdataset as gd
 import models
 
-best_rmse = float("inf")
+best_loss = float("inf")
 
 def main():
     parser = argparse.ArgumentParser(description="Distributed PyTorch")
 
-    parser.add_argument("world_size", type=int, default=4,
+    parser.add_argument('world_size', type=int, default=4, metavar='N',
         help="""Total number of participating processes. Should be the sum of
         master node and all training nodes.""")
 
-    parser.add_argument("rank", type=int, default=None,
+    parser.add_argument('rank', type=int, default=None, metavar='N',
         help="Global rank of this process. Pass in 0 for master.")
 
-    parser.add_argument('--dist-conn', default='bentley:15516', type=str,
+    parser.add_argument('--dist-conn', type=str, default='bentley:15516',
                         help='master host:port used to set up distributed training')
 
-    parser.add_argument('-b', '--batch-size', type=int, default=25,
-        metavar='N',
+    parser.add_argument('--batch-size', type=int, default=25, metavar='N',
         help='mini-batch size (default: 3).')
 
-    parser.add_argument('--epochs', default=1, type=int, metavar='N',
+    parser.add_argument('--epochs', type=int, default=1, metavar='N',
         help='number of total epochs to run')
 
-    parser.add_argument("--data", type=str, default="../data/",
+    parser.add_argument("--data", type=str, default="../data/", metavar='N',
         help="Directory containing the data to be run on.")
 
-    parser.add_argument('--cuda', type=bool, default=False,
+    parser.add_argument('--cuda', type=bool, default=False, metavar='N',
         help='True to use CUDA on GPU. WARN: only implemented on CPU!.')
 
-    parser.add_argument('-d', '--latent-dim', type=int, default=10,
+    parser.add_argument('--latent-dim', type=int, default=10, metavar='N',
         help='Dimensionality of the latent vector.')
 
-    parser.add_argument('-c', '--channels', type=int, nargs='+', default=[0],
+    parser.add_argument('--channels', type=int, nargs='+', default=[0, 6], metavar='N',
         help='Channels to evaluate (use at end).')
+
+    parser.add_argument('--model', type=str, default='cnn', metavar='N',
+        help='Type of model to analyze either, cnn | lin | vae.')
+
+    parser.add_argument('--best-model', default='best_model.pth.tar', type=str, metavar='PATH',
+                help='path to best model (default: best_model.pth.tar)')
 
     args = parser.parse_args()
 
@@ -64,6 +70,7 @@ def main():
     assert args.world_size > args.rank, 'world_size must be greater than rank.'
     assert os.path.exists(args.data) and 'hdfs' not in args.data, 'data directory must exist on disk.'
     assert len(args.channels) > 0, f'{args.channels} :: must provide valid channels, e.g., [0, 2, 3].'
+    assert args.model in ['cnn', 'lin','vae'], 'must provide a valid --model type.'
 
     try:
         setup(args)
@@ -105,56 +112,12 @@ def load_dataset(args):
     return train_loader, train_sampler
 
 
-def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1,
-                      length = 100, fill = '█', printEnd = "\r"):
-    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = printEnd)
-    if iteration == total:
-        print()
-
-
-def load_model(nnet, optimizer, args):
-    r"""Currently NOT being used. This could be used for checkpointing,
-    but needs additional logic to set the best_rmse and start_epoch.
-    """
-    checkpoint = torch.load(args.resume)
-    last_epoch = checkpoint['epoch']
-    best_rmse = checkpoint['best_rmse']
-    nnet.load_state_dict(checkpoint['state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
-    return nnet, optimizer
-
-
-def save_checkpoint(state, is_best, filename='checkpoint'):
-    r"""All nodes will save an update to `checkpoint`. Therefore, the node to
-    finish last will have the most recent checkpoint. If the checkpoint is the
-    best model, then it will save save.
-    """
-    date = datetime.datetime.now().strftime('%m%d%Y')
-    filename = filename + '_' + date + '.pth.tar'
-    torch.save(state, filename)
-    if is_best:
-        best_filename = 'model_best' + '_' + date + '.pth.tar'
-        print(f'INFO: Saving best model to {best_filename} with lowest '
-               'error \u03BC = {0:.3f} from node rank: {1}'.format(
-               state['best_rmse'], dist.get_rank()))
-
-        shutil.copyfile(filename, best_filename)
-
-
-def flatten_dimension(train_loader,args):
-    shape = train_loader.dataset[0][args.channels, ...].shape
-    return np.product(shape)
-
-
 def main_worker(args):
-    global best_rmse
+    global best_loss
 
     train_loader, train_sampler = load_dataset(args)
-    nnet = models.AutoencoderLinear(flatten_dimension(train_loader, args),
-                                    args.latent_dim)
+    nnet = models.get_model(train_loader, args)
+
     print(nnet)
 
     if args.distributed:
@@ -181,22 +144,24 @@ def main_worker(args):
         progress = train(train_loader, nnet, criterion, optimizer, epoch, args)
         # progress.display(len(train_loader))
 
-        rmse = progress.getAvgMeter('Error').avg
+        loss = progress.getAvgMeter('Error').avg
 
         # remember best error and save checkpoint
-        # is_best = rmse < best_rmse
-        # best_rmse = min(rmse, best_rmse)
-        #
-        # save_checkpoint({
-        #     'epoch': epoch + 1,
-        #     'state_dict': nnet.state_dict(),
-        #     'best_rmse' : best_rmse,
-        #     'optimizer' : optimizer.state_dict(),
-        # }, is_best)
+        is_best = loss < best_loss
+        best_loss = min(loss, best_loss)
+
+        save_checkpoint(args, {
+            'epoch': epoch + 1,
+            'state_dict': nnet.state_dict(),
+            'best_loss' : best_loss,
+            'optimizer' : optimizer.state_dict(),
+        }, is_best)
 
     if dist.get_rank() == 0:
-        print('HERE')
-        viz.visualize(nnet, train_loader, args.channels[0])
+        print('Finished. Saving media figures.')
+        if args.distributed:
+            nnet.require_forward_param_sync = False
+        viz.visualize(nnet, train_loader, args)
 
 
 def train(train_loader, nnet, criterion, optimizer, epoch, args):
@@ -215,19 +180,28 @@ def train(train_loader, nnet, criterion, optimizer, epoch, args):
         data_time.update(time.time() - end)
 
         X = X[:, args.channels, ...]
-        X = X.reshape(X.shape[0], np.product(X.shape[1:]))
+
+        if 'lin' in args.model:
+            X = X.reshape(X.shape[0], np.product(X.shape[1:]))
+
         if args.cuda:
             X = X.cuda(non_blocking=True)
 
-        Y = nnet(X)
-        # RMSE error
-        rmse = torch.sqrt(criterion(Y, X))
+        if 'vae' in args.model:
+            # 'loss': loss, 'Reconstruction_Loss':recons_loss, 'KLD':-kld_loss
+            Y, mu, log_var = nnet(X)
+            mse = criterion(Y, X)
+            kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
+            loss = mse + kld_loss
+        else:
+            Y = nnet(X)
+            loss = torch.sqrt(criterion(Y, X))
 
-        error.update(rmse.item(), X.shape[0])
+        error.update(loss.item(), X.shape[0])
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        rmse.backward()
+        loss.backward()
         optimizer.step()
 
         # measure elapsed time
@@ -239,6 +213,53 @@ def train(train_loader, nnet, criterion, optimizer, epoch, args):
         progress.display(i + 1)
 
     return progress
+
+###############################################################
+#
+# Utility functions
+#
+
+def load_model(args):
+    r"""Currently NOT being used. This could be used for checkpointing,
+    but needs additional logic to set the best_loss and start_epoch.
+    """
+    if os.path.isfile(args.best_model):
+
+        print("=> loading checkpoint '{}'".format(args.best_model))
+        checkpoint = torch.load(args.best_model)
+        last_epoch = checkpoint['epoch']
+        best_loss = checkpoint['best_loss']
+        checkpoint.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        return nnet, optimizer
+    else:
+        print("=> no checkpoint found at '{}'".format(args.best_model))
+        sys.exit(3)
+
+
+def save_checkpoint(args, state, is_best, filename='checkpoint'):
+    r"""All nodes will save an update to `checkpoint`. Therefore, the node to
+    finish last will have the most recent checkpoint. If the checkpoint is the
+    best model, then it will save save.
+    """
+    date = datetime.datetime.now().strftime('%m%d%Y')
+    if is_best:
+        best_filename = args.best_model
+        print(f'INFO: Saving best model to {best_filename} with lowest '
+               'error \u03BC = {0:.3f} from node rank: {1}'.format(
+               state['best_loss'], dist.get_rank()))
+
+        torch.save(state, best_filename)
+
+
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1,
+                      length = 100, fill = '█', printEnd = "\r"):
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = printEnd)
+    if iteration == total:
+        print()
 
 
 class AverageMeter(object):
