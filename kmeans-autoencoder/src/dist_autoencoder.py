@@ -68,7 +68,8 @@ def main():
 
     assert args.rank is not None, 'must provide rank argument.'
     assert args.world_size > args.rank, 'world_size must be greater than rank.'
-    assert os.path.exists(args.data) and 'hdfs' not in args.data, 'data directory must exist on disk.'
+    if 'hdfs' not in args.data:
+        assert os.path.exists(args.data), 'data directory must exist on disk.'
     assert len(args.channels) > 0, f'{args.channels} :: must provide valid channels, e.g., [0, 2, 3].'
     assert args.model in ['cnn', 'lin','vae'], 'must provide a valid --model type.'
 
