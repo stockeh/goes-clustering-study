@@ -9,19 +9,22 @@ from torch.nn import functional as F
 class LinearAutoencoder(nn.Module):
     """Linear Autoencoder"""
 
-    def __init__(self,
-                 in_shape: List,
+    def __init__(self, in_shape: List,
+                 latent_dim: int,
                  hidden_dims: List = None,
                  **kwargs) -> None:
         """
         Args:
         :in_shape: input shape
+        :latent_dim: dim of latent space.
         :hidden_dims: units in conv layers, e.g., [512, 256, 128, 10]
         """
         super(LinearAutoencoder, self).__init__()
 
         if hidden_dims is None:
-            hidden_dims = [512, 256, 128, 10]
+            hidden_dims = [512, 256, 128]
+
+        hidden_dims.append(latent_dim)
 
         in_features = in_shape
 
@@ -87,16 +90,15 @@ class ColvolutionalAutoencoder(nn.Module):
         if ker_str_pad is None:
             ker_str_pad = [(10, 3, 1), (8, 2, 0), (3, 3, 0)]
 
-        latent_dim  = latent_dim
         ker_str_pad = ker_str_pad
+        self.hidden_dims = hidden_dims
 
-        hidden_dims = hidden_dims
-        output_size_previous = in_shape[1]
+        self.output_size_previous = in_shape[1]
         in_channels = in_shape[0]
 
         #### Build Encoder ####
         modules = []
-        for (h_dim, ksp) in zip(hidden_dims, ker_str_pad):
+        for (h_dim, ksp) in zip(self.hidden_dims, ker_str_pad):
             kernel, stride, padding = ksp
             modules.append(
                 nn.Sequential(
@@ -107,55 +109,84 @@ class ColvolutionalAutoencoder(nn.Module):
                     nn.BatchNorm2d(h_dim),
                     nn.LeakyReLU())
             )
-            output_size_previous = (output_size_previous + 2 * padding - kernel) // stride + 1
+            self.output_size_previous = (self.output_size_previous + 2 * padding - kernel) // stride + 1
             in_channels = h_dim
+
+        modules.append(
+            nn.Sequential(
+                nn.Flatten(start_dim=1),
+                nn.Linear(hidden_dims[-1] * self.output_size_previous ** 2, latent_dim),
+                nn.BatchNorm1d(num_features=latent_dim))
+        )
 
         self.encoder = nn.Sequential(*modules)
 
         #### Build Decoder ####
-        #
-        # TODO: Check latent_dim size
-        #
 
-        hidden_dims.reverse()
+        self.decoder_input = nn.Sequential(
+                                nn.Linear(latent_dim, self.hidden_dims[-1] * self.output_size_previous ** 2))
+
+        self.hidden_dims.reverse()
         ker_str_pad.reverse()
 
         modules = []
-        for i in range(len(hidden_dims) - 1):
+        for i in range(len(self.hidden_dims) - 1):
             kernel, stride, padding = ker_str_pad[i]
             modules.append(
                 nn.Sequential(
                     # nn.ConvTranspose2d(...)
                     # (n - 1)s - 2p + (k - 1) + op + 1
-                    nn.ConvTranspose2d(hidden_dims[i],
-                                       hidden_dims[i + 1],
+                    nn.ConvTranspose2d(self.hidden_dims[i],
+                                       self.hidden_dims[i + 1],
                                        kernel_size=kernel,
                                        stride=stride,
                                        padding=padding,
                                        output_padding=padding),
-                    nn.BatchNorm2d(hidden_dims[i + 1]),
+                    nn.BatchNorm2d(self.hidden_dims[i + 1]),
                     nn.LeakyReLU())
             )
 
         modules.append(
             nn.Sequential(
-                nn.ConvTranspose2d(hidden_dims[-1],
-                                   hidden_dims[-1],
+                nn.ConvTranspose2d(self.hidden_dims[-1],
+                                   self.hidden_dims[-1],
                                    kernel_size=ker_str_pad[-1][0],
                                    stride=ker_str_pad[-1][1],
                                    padding=ker_str_pad[-1][2]),
-                nn.BatchNorm2d(hidden_dims[-1]),
+                nn.BatchNorm2d(self.hidden_dims[-1]),
                 nn.LeakyReLU(),
-                nn.Conv2d(hidden_dims[-1], out_channels=in_shape[0],
+                nn.Conv2d(self.hidden_dims[-1], out_channels=in_shape[0],
                           kernel_size=3, stride=1, padding=1),
                 nn.Sigmoid())
         )
 
         self.decoder = nn.Sequential(*modules)
 
+        self.hidden_dims.reverse()
+        ker_str_pad.reverse()
+
+    def encode(self, X: Tensor) -> List[Tensor]:
+        """
+        Encodes X into latent vector
+        :param input: Input tensor to encoder [N x C x H x W]
+        :return: Latent vector
+        """
+        return self.encoder(X)
+
+
+    def decode(self, Z: Tensor) -> Tensor:
+        """
+        Maps the given latent vector onto the image space.
+        :param Z: [B x D]
+        :return: [B x C x H x W]
+        """
+        Z = self.decoder_input(Z)
+        Z = Z.view(-1, self.hidden_dims[-1], self.output_size_previous, self.output_size_previous)
+        return self.decoder(Z)
+
     def forward(self, X):
-        Z = self.encoder(X)
-        Y = self.decoder(Z)
+        Z = self.encode(X)
+        Y = self.decode(Z)
         return Y
 
 
@@ -186,10 +217,9 @@ class VariationalAutoencoder(torch.nn.Module):
         if ker_str_pad is None:
             ker_str_pad = [(10, 3, 1), (8, 2, 0), (3, 3, 0)]
 
-        latent_dim  = latent_dim
         ker_str_pad = ker_str_pad
-
         self.hidden_dims = hidden_dims
+
         self.output_size_previous = in_shape[1]
         in_channels = in_shape[0]
 
@@ -247,6 +277,9 @@ class VariationalAutoencoder(torch.nn.Module):
                                       kernel_size=3, stride=1, padding=1),
                             nn.Sigmoid())
 
+        self.hidden_dims.reverse()
+        ker_str_pad.reverse()
+
     def encode(self, X: Tensor) -> List[Tensor]:
         """
         Encodes the input by passing through the encoder network
@@ -272,7 +305,7 @@ class VariationalAutoencoder(torch.nn.Module):
         :return: [B x C x H x W]
         """
         Y = self.decoder_input(Z)
-        Y = Y.view(-1, self.hidden_dims[0], self.output_size_previous, self.output_size_previous)
+        Y = Y.view(-1, self.hidden_dims[-1], self.output_size_previous, self.output_size_previous)
         Y = self.decoder(Y)
         Y = self.final_layer(Y)
         return Y
@@ -325,12 +358,14 @@ class VariationalAutoencoder(torch.nn.Module):
 def get_model(train_loader, args):
     if 'cnn' in args.model:
         X_shape = train_loader.dataset[0][args.channels, ...].shape
-        return ColvolutionalAutoencoder(X_shape, args.latent_dim)
+        return ColvolutionalAutoencoder(X_shape, args.latent_dim,
+                                        args.hidden_dims, args.ker_str_pad)
     if 'vae' in args.model:
         X_shape = train_loader.dataset[0][args.channels, ...].shape
-        return VariationalAutoencoder(X_shape, args.latent_dim)
+        return VariationalAutoencoder(X_shape, args.latent_dim,
+                                      args.hidden_dims, args.ker_str_pad)
     elif 'lin' in args.model:
         X_shape = np.product(train_loader.dataset[0][args.channels, ...].shape)
-        return LinearAutoencoder(X_shape)
+        return LinearAutoencoder(X_shape, args.latent_dim)
     else:
         print(f'WARN: {args.model} is not supported.')
