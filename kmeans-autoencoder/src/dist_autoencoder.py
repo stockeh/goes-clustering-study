@@ -124,7 +124,7 @@ def main_worker(args):
                                     'error_trace', 'duration'])
     algo    = 'adam'
     l_epoch = [2]
-    l_rho   = [0.01]
+    l_rho   = [0.01, 0.001]
     l_latent_dim = [2]
     l_hidden_dims = [[4, 8, 16]]
     l_ker_str_pad = [[(10, 3, 1), (8, 2, 0), (3, 3, 0)]]
