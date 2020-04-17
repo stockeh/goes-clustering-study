@@ -44,6 +44,7 @@ class GOESDataset(Dataset):
 
             if self.transform:
                 sample = self.transform(sample)
+
             return sample
         except:
             # used too catch invalid samples, and custom_collate
