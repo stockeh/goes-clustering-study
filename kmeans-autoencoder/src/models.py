@@ -355,17 +355,15 @@ class VariationalAutoencoder(torch.nn.Module):
         return [self.decode(Z), X, mu, log_var]
 
 
-def get_model(train_loader, args):
+def get_model(X_shape, args):
     if 'cnn' in args.model:
-        X_shape = train_loader.dataset[0][args.channels, ...].shape
         return ColvolutionalAutoencoder(X_shape, args.latent_dim,
                                         args.hidden_dims, args.ker_str_pad)
     if 'vae' in args.model:
-        X_shape = train_loader.dataset[0][args.channels, ...].shape
         return VariationalAutoencoder(X_shape, args.latent_dim,
                                       args.hidden_dims, args.ker_str_pad)
     elif 'lin' in args.model:
-        X_shape = np.product(train_loader.dataset[0][args.channels, ...].shape)
-        return LinearAutoencoder(X_shape, args.latent_dim)
+        return LinearAutoencoder(np.product(X_shape), args.latent_dim,
+                                 args.hidden_dims)
     else:
         print(f'WARN: {args.model} is not supported.')

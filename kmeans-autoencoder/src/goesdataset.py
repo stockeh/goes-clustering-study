@@ -10,14 +10,10 @@ import read_region as rr
 class GOESDataset(Dataset):
     """Eastern Pacific/Northern Atlantic Ocean GOES NetCDF dataset."""
 
-    def __init__(self, root_dir, channels=True, geo=False,
-                 retrievals=False, transform=None ):
+    def __init__(self, root_dir, transform=None ):
         """
         Args:
             root_dir (string): directory with all the .nc files.
-            channels (bool): set to True to return ABI channel data
-            geo (bool): set to True to return geolocation data
-            retrievals (bool): set to True to return retrieval data
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
@@ -25,27 +21,29 @@ class GOESDataset(Dataset):
         self.data_list = glob.glob(root_dir + '*')
         self.data_len  = len(self.data_list)
 
-        self.channels   = channels
-        self.geo        = geo
-        self.retrievals = retrievals
+        self.channels   = True
+        self.geo        = False
+        self.retrievals = True
 
         self.transform = transform
 
     def __getitem__(self, inx):
-        """WARN: Currently only implemented for `channels`."""
+        """WARN: Currently only implemented for `channels` and `retrivals`."""
         try:
             filename = self.data_list[inx]
-
             data = rr.read_region(filename, channels=self.channels,
                                    geo=self.geo, retrievals=self.retrievals)
 
-            sample = np.array(data['c00'])
+            sample, type = np.array(data['c00']), np.array(data['ctype'])
             sample = np.moveaxis(sample, 2, 0)
+
+            counts = np.bincount(type.flatten())
+            label = np.argmax(counts)
 
             if self.transform:
                 sample = self.transform(sample)
 
-            return sample
+            return sample, label, filename
         except:
             # used too catch invalid samples, and custom_collate
             pass
