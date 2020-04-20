@@ -25,6 +25,7 @@ import models
 
 best_loss = float("inf")
 best_nnet = None
+best_result_index = 0
 
 def main():
     parser = argparse.ArgumentParser(description="Distributed PyTorch")
@@ -39,23 +40,11 @@ def main():
     parser.add_argument('--dist-conn', type=str, default='bentley:15516',
                         help='master host:port used to set up distributed training')
 
-    parser.add_argument('--batch-size', type=int, default=25, metavar='N',
-        help='mini-batch size (default: 3).')
-
-    parser.add_argument('--epochs', type=int, default=1, metavar='N',
-        help='number of total epochs to run')
-
     parser.add_argument("--data", type=str, default="../data/", metavar='N',
         help="Directory containing the data to be run on.")
 
     parser.add_argument('--cuda', type=bool, default=False, metavar='N',
         help='True to use CUDA on GPU. WARN: only implemented on CPU!.')
-
-    parser.add_argument('--latent-dim', type=int, default=10, metavar='N',
-        help='Dimensionality of the latent vector.')
-
-    parser.add_argument('--channels', type=int, nargs='+', default=[0, 6], metavar='N',
-        help='Channels to evaluate (use at end).')
 
     parser.add_argument('--model', type=str, default='cnn', metavar='N',
         help='Type of model to analyze either, cnn | lin | vae.')
@@ -71,7 +60,6 @@ def main():
     assert args.world_size > args.rank, 'world_size must be greater than rank.'
     if 'hdfs' not in args.data:
         assert os.path.exists(args.data), 'data directory must exist on disk.'
-    assert len(args.channels) > 0, f'{args.channels} :: must provide valid channels, e.g., [0, 2, 3].'
     assert args.model in ['cnn', 'lin','vae'], 'must provide a valid --model type.'
 
     try:
@@ -97,7 +85,7 @@ def setup(args):
 
 
 def load_dataset(args):
-    train_set = gd.GOESDataset(root_dir=args.data, channels=True,
+    train_set = gd.GOESDataset(root_dir=args.data,
                                transform=transforms.Compose([
                                     gd.Square(), gd.Normalize(), gd.ToTensor()
                                ]))
@@ -115,25 +103,28 @@ def load_dataset(args):
 
 
 def main_worker(args):
-    global best_loss, best_nnet
+    global best_loss, best_nnet, best_result_index
 
-    train_loader, train_sampler = load_dataset(args)
-
-    results = pd.DataFrame(columns=['algo', 'rho', 'epochs', 'batch_size',
+    results = pd.DataFrame(columns=['model', 'algo', 'rho', 'epochs', 'batch_size', 'channels',
                                     'latent_dim', 'hidden_dims', 'ker_str_pad',
                                     'error_trace', 'duration'])
     algo    = 'adam'
-    l_epoch = [2]
-    l_rho   = [0.01, 0.001]
-    l_latent_dim = [2]
-    l_hidden_dims = [[4, 8, 16]]
-    l_ker_str_pad = [[(10, 3, 1), (8, 2, 0), (3, 3, 0)]]
+    l_epoch = [10]
+    l_rho   = [0.01]
+    l_batch_size = [20]
+    l_latent_dim = [2, 3, 5, 10]
+    l_hidden_dims = [[10, 10, 10]]
+    l_ker_str_pad = [[(8, 1, 0), (5, 1, 0), (3, 2, 0)]]
+    l_channels = [[0]]
 
-    for (epochs, rho, latent_dim, hidden_dims, ker_str_pad) in itertools.product(
-        l_epoch, l_rho, l_latent_dim, l_hidden_dims, l_ker_str_pad):
+    for (epochs, rho, batch_size, latent_dim, hidden_dims, ker_str_pad, channels) in itertools.product(
+        l_epoch, l_rho, l_batch_size, l_latent_dim, l_hidden_dims, l_ker_str_pad, l_channels):
 
         args.hidden_dims, args.ker_str_pad, args.latent_dim = hidden_dims, ker_str_pad, latent_dim
-        nnet = models.get_model(train_loader, args)
+        args.batch_size = batch_size
+        args.channels = channels
+        train_loader, train_sampler = load_dataset(args)
+        nnet = models.get_model(train_loader.dataset[0][0][args.channels, ...].shape, args)
 
         if args.distributed:
             if args.cuda:
@@ -158,7 +149,7 @@ def main_worker(args):
             progress = train(train_loader, nnet, criterion,
                              optimizer, epoch, error_trace, args)
 
-        results.loc[len(results)] = [algo, rho, epochs, args.batch_size,
+        results.loc[len(results)] = [args.model, algo, rho, epochs, args.batch_size, args.channels,
                                      latent_dim, hidden_dims, ker_str_pad,
                                      error_trace, time.time() - start]
 
@@ -168,9 +159,10 @@ def main_worker(args):
         if loss < best_loss:
             best_loss = loss
             best_nnet = nnet
+            best_result_index = len(results) - 1
 
     if dist.get_rank() == 0:
-        save_results(best_nnet, optimizer, train_loader, results, args)
+        save_results(best_nnet, optimizer, results, best_result_index, args)
 
 
 def train(train_loader, nnet, criterion, optimizer, epoch, error_trace, args):
@@ -184,7 +176,7 @@ def train(train_loader, nnet, criterion, optimizer, epoch, error_trace, args):
     nnet.train()
 
     end = time.time()
-    for i, X in enumerate(train_loader):
+    for i, (X,_,_) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
@@ -221,30 +213,55 @@ def train(train_loader, nnet, criterion, optimizer, epoch, error_trace, args):
     return progress
 
 
-def save_results(best_nnet, optimizer, train_loader, results, args):
-    r_f, lvs_f, bm_f = 'results.csv', 'latent_vectors.csv', 'best_model.pth.tar'
+def save_results(best_nnet, optimizer, results, best_result_index, args):
+    dir = '../results/'
+    r_f, br_f = dir + 'results.csv', dir + 'best_result.csv'
+    lvs_f, bm_f = dir + 'latent_vectors.csv', dir + 'best_model.pth.tar'
+
     print(f'INFO: Finished. Saving experiment results to {r_f}.')
     results.to_csv(r_f)
-    print('INFO: Saving media figures.')
+    print(f'INFO: Saving media figures with best index of {best_result_index}.')
+
+    best_result = results.loc[best_result_index]
+    best_result.to_csv(br_f)
+    args.batch_size, args.channels = best_result.batch_size, best_result.channels
+    train_set = gd.GOESDataset(root_dir=args.data,
+                               transform=transforms.Compose([
+                                    gd.Square(), gd.Normalize(), gd.ToTensor()
+                               ]))
+
+    train_loader = torch.utils.data.DataLoader(
+        train_set, batch_size=args.batch_size,
+        num_workers=4, collate_fn=gd.custom_collate)
+
     if args.distributed:
-        best_nnet.require_forward_param_sync = False
-    viz.visualize(best_nnet, train_loader, args)
+        best_nnet = best_nnet.module
+    viz.visualize(best_nnet, train_loader, dir, args)
     # save_checkpoint(args, {
     #     'state_dict': best_nnet.state_dict(),
     #     'optimizer' : optimizer.state_dict(),
     # }, filename=bm_f)
     print(f'INFO: Saving latent vector of model to {lvs_f}.')
-    latent_vectors = pd.DataFrame(columns=['latent_vector'])
-    for i, X in enumerate(train_loader):
-        X = X[:, args.channels, ...]
-        if 'lin' in args.model:
-            X = X.reshape(X.shape[0], np.product(X.shape[1:]))
-        if args.cuda:
-            X = X.cuda(non_blocking=True)
-        Y = best_nnet.encode(X).detach().numpy()
-        for batch in Y:
-            latent_vectors.loc[len(latent_vectors)] = [list(batch)]
-    latent_vectors.to_csv(lvs_f)
+    latent_vectors = pd.DataFrame(columns=['latent_vector', 'label', 'filename'])
+    # turn off gradients and other aspects of training
+    best_nnet.eval()
+    with torch.no_grad():
+        n_batches  = len(train_loader)
+        for i, (X,T,filename) in enumerate(train_loader):
+            X = X[:, args.channels, ...]
+            if 'lin' in args.model:
+                X = X.reshape(X.shape[0], np.product(X.shape[1:]))
+            if args.cuda:
+                X = X.cuda(non_blocking=True)
+            if 'vae' in args.model:
+                Y = best_nnet.encode(X)[0].detach().numpy()
+            else:
+                Y = best_nnet.encode(X).detach().numpy()
+            for batch, t, f in zip(Y, T, filename):
+                latent_vectors.loc[len(latent_vectors)] = [list(batch), t.item(), f]
+            printProgressBar(i + 1, n_batches, prefix='Progress:', suffix='Complete', length=50)
+        latent_vectors.to_csv(lvs_f)
+
 
 def save_checkpoint(args, state, filename='best_model.pth.tar'):
     date = datetime.datetime.now().strftime('%m%d%Y')
@@ -267,6 +284,16 @@ def load_model(filename):
     else:
         print("=> no checkpoint found at '{}'".format(filename))
         sys.exit(3)
+
+
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1,
+                      length = 100, fill = '█', printEnd = "\r"):
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = printEnd)
+    if iteration == total:
+        print()
 
 
 if __name__ == '__main__':
