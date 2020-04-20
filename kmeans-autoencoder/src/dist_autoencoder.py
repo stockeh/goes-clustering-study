@@ -109,10 +109,10 @@ def main_worker(args):
                                     'latent_dim', 'hidden_dims', 'ker_str_pad',
                                     'error_trace', 'duration'])
     algo    = 'adam'
-    l_epoch = [10]
+    l_epoch = [1]
     l_rho   = [0.01]
-    l_batch_size = [20]
-    l_latent_dim = [2, 3, 5, 10]
+    l_batch_size = [256]
+    l_latent_dim = [3]
     l_hidden_dims = [[10, 10, 10]]
     l_ker_str_pad = [[(8, 1, 0), (5, 1, 0), (3, 2, 0)]]
     l_channels = [[0]]
@@ -242,11 +242,11 @@ def save_results(best_nnet, optimizer, results, best_result_index, args):
     #     'optimizer' : optimizer.state_dict(),
     # }, filename=bm_f)
     print(f'INFO: Saving latent vector of model to {lvs_f}.')
-    latent_vectors = pd.DataFrame(columns=['latent_vector', 'label', 'filename'])
     # turn off gradients and other aspects of training
     best_nnet.eval()
     with torch.no_grad():
         n_batches  = len(train_loader)
+        dictinary_list = []
         for i, (X,T,filename) in enumerate(train_loader):
             X = X[:, args.channels, ...]
             if 'lin' in args.model:
@@ -257,9 +257,13 @@ def save_results(best_nnet, optimizer, results, best_result_index, args):
                 Y = best_nnet.encode(X)[0].detach().numpy()
             else:
                 Y = best_nnet.encode(X).detach().numpy()
-            for batch, t, f in zip(Y, T, filename):
-                latent_vectors.loc[len(latent_vectors)] = [list(batch), t.item(), f]
+
+            for y, t, f in zip(Y, T, filename):
+                dictionary_data = {'latent_vector': list(y), 'label': t.item(), 'filename': f}
+                dictinary_list.append(dictionary_data)
             printProgressBar(i + 1, n_batches, prefix='Progress:', suffix='Complete', length=50)
+            
+        latent_vectors = pd.DataFrame.from_dict(dictinary_list)
         latent_vectors.to_csv(lvs_f)
 
 
