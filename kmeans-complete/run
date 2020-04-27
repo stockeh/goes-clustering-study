@@ -1,3 +1,3 @@
 #!/bin/bash
-$SPARK_HOME/bin/spark-submit --executor-memory 4096m --class org.apache.spark.examples.mllib.kmeans --master spark://lincoln:30864 target/scala-2.11/kmeanscomplete_2.11-1.0.jar $1
+$SPARK_HOME/bin/spark-submit --class org.apache.spark.examples.mllib.kmeans --master spark://lincoln:30864 target/scala-2.11/kmeanscomplete_2.11-1.0.jar $1
 
