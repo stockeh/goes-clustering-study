@@ -44,7 +44,7 @@ class LinearAutoencoder(nn.Module):
 
         #### Build Decoder ####
         hidden_dims.reverse()
-        print(hidden_dims)
+
         modules = []
         for i in range(len(hidden_dims) - 1):
             h_dim = hidden_dims[i + 1]

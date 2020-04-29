@@ -46,7 +46,7 @@ def main():
     parser.add_argument('--cuda', type=bool, default=False, metavar='N',
         help='True to use CUDA on GPU. WARN: only implemented on CPU!.')
 
-    parser.add_argument('--model', type=str, default='lin', metavar='N',
+    parser.add_argument('--model', type=str, default='cnn', metavar='N',
         help='Type of model to analyze either, cnn | lin | vae.')
 
     args = parser.parse_args()
@@ -114,8 +114,8 @@ def main_worker(args):
     l_rho   = [0.001]
     l_batch_size = [512]
     l_latent_dim = [3]
-    l_hidden_dims = [[256, 128, 64, 16]]
-    l_ker_str_pad = [[]]
+    l_hidden_dims = [[10, 10, 10]]
+    l_ker_str_pad = [[(3, 1, 0), (4, 2, 0), (4, 2, 0)]]
     l_channels = [[1, 7, 12]]
 
     for (epochs, rho, batch_size, latent_dim, hidden_dims, ker_str_pad, channels) in itertools.product(
