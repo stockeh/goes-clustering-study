@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import copy
 
 from typing import List
 from torch import tensor as Tensor
@@ -11,7 +12,7 @@ class LinearAutoencoder(nn.Module):
 
     def __init__(self, in_shape: List,
                  latent_dim: int,
-                 hidden_dims: List = None,
+                 _hidden_dims: List = None,
                  **kwargs) -> None:
         """
         Args:
@@ -21,9 +22,10 @@ class LinearAutoencoder(nn.Module):
         """
         super(LinearAutoencoder, self).__init__()
 
-        if hidden_dims is None:
+        if _hidden_dims is None:
             hidden_dims = [512, 256, 128]
 
+        hidden_dims = copy.copy(_hidden_dims)
         hidden_dims.append(latent_dim)
 
         in_features = in_shape
@@ -42,7 +44,7 @@ class LinearAutoencoder(nn.Module):
 
         #### Build Decoder ####
         hidden_dims.reverse()
-
+        print(hidden_dims)
         modules = []
         for i in range(len(hidden_dims) - 1):
             h_dim = hidden_dims[i + 1]
@@ -56,10 +58,15 @@ class LinearAutoencoder(nn.Module):
         modules.append(
             nn.Sequential(
                 nn.Linear(in_features=in_features, out_features=in_shape),
-                nn.Sigmoid())
+                nn.Tanh())
         )
 
         self.decoder = nn.Sequential(*modules)
+        hidden_dims.reverse()
+        hidden_dims = hidden_dims[:-1]
+
+    def encode(self, X):
+        return self.encoder(X)
 
     def forward(self, X):
         Z = self.encoder(X)
@@ -157,7 +164,7 @@ class ColvolutionalAutoencoder(nn.Module):
                 nn.LeakyReLU(),
                 nn.Conv2d(self.hidden_dims[-1], out_channels=in_shape[0],
                           kernel_size=3, stride=1, padding=1),
-                nn.Sigmoid())
+                nn.Tanh())
         )
 
         self.decoder = nn.Sequential(*modules)
@@ -275,7 +282,7 @@ class VariationalAutoencoder(torch.nn.Module):
                             nn.LeakyReLU(),
                             nn.Conv2d(self.hidden_dims[-1], out_channels=in_shape[0],
                                       kernel_size=3, stride=1, padding=1),
-                            nn.Sigmoid())
+                            nn.Tanh())
 
         self.hidden_dims.reverse()
         ker_str_pad.reverse()
