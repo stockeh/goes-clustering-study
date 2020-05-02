@@ -20,9 +20,9 @@ object kmeans {
 	val data = spark.read.textFile(path).rdd
 	val parsedData = data.map(s => Vectors.dense(s.split(',').map(_.toDouble))).cache()
 
-	// Cluster the data into two classes using KMeans
+	// Cluster the data into classes using KMeans
 	val numClusters = 4
-	val numIterations = 20
+	val numIterations = 2000
 	val clusters = KMeans.train(parsedData, numClusters, numIterations)
 
 	// Evaluate clustering by computing Within Set Sum of Squared Errors
