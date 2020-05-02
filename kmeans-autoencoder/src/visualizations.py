@@ -18,7 +18,7 @@ def visualize(nnet, train_loader, dir, args):
             dims = X.shape
             print(dims, T, filename)
             o_filename = f'{dir}{i}_original'
-            save_1(X[ch:ch+1,...], o_filename, f'T: {T}, f: {filename}_o, [{ch}]')
+            save_1(X[:1,...], o_filename, f'T: {T}, f: {filename}_o, [{ch}]')
 
             m_filename = f'{dir}{i}_modified'
             if 'lin' in args.model:
@@ -30,10 +30,11 @@ def visualize(nnet, train_loader, dir, args):
             elif 'vae' in args.model:
                 X = torch.from_numpy(np.expand_dims(X, axis=0)).float()
                 Y = nnet(X)[0].detach().numpy()[0, ...]
-            save_1(Y[ch:ch+1,...], m_filename, f'T: {T}, f: {filename}_m, [{ch}]')
+            save_1(Y[:1,...], m_filename, f'T: {T}, f: {filename}_m, [{ch}]')
 
 
 def save_1(X, filename, title):
+    print(X.shape)
     fig = plt.figure(figsize=(4, 4))
     ax = fig.add_subplot(111)
 

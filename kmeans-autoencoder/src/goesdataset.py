@@ -64,18 +64,28 @@ class GOESDataset(Dataset):
 
 
 class ToTensor(object):
-    """Convert ndarrays in sample to Tensors."""
+    """Convert ndarrays in sample to Tensors.
+       Scale data with the max values from each channel
+    """
+    def __init__(self):
+
+        self.max_channels = np.array([  1.23364961,   1.1933322 ,   1.20698297,   0.77238023,
+                                        0.74793577,   0.57047564, 313.15881348, 256.77209473,
+                                        264.97137451, 272.53656006, 294.66796875, 276.41287231,
+                                        297.76239014, 297.10894775, 294.52630615, 279.70178223]).reshape(16, 1, 1)
 
     def __call__(self, sample):
         # torch shape: C X H X W
+        sample = sample / self.max_channels
         return torch.from_numpy(sample).float()
+
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
 
 
 class Normalize(object):
-    """Normalize sample with its own min/max values."""
+    """Normalize individual sample with its own min/max values."""
 
     def __call__(self, sample):
         # torch shape: C X H X W
