@@ -116,7 +116,7 @@ def main_worker(args):
     l_latent_dim = [3]
     l_hidden_dims = [[10, 10, 10]]
     l_ker_str_pad = [[(3, 1, 0), (4, 2, 0), (4, 2, 0)]]
-    l_channels = [[1, 7, 12]]
+    l_channels = [[0, 1, 2]]
 
     for (epochs, rho, batch_size, latent_dim, hidden_dims, ker_str_pad, channels) in itertools.product(
         l_epoch, l_rho, l_batch_size, l_latent_dim, l_hidden_dims, l_ker_str_pad, l_channels):
