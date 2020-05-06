@@ -1,4 +1,4 @@
-# North and South American Cloud Regimes from the Geostationary Operational Environmental Satellite (GOES-16)
+# Clustering Cloud Types from the Geostationary Operational Environmental Satellite (GOES-16)
 
 Unsupervised learning techniques performed in this study include:
 
@@ -6,4 +6,5 @@ Unsupervised learning techniques performed in this study include:
 2. [kMeans + Autoencoder](kmeans-autoencoder)
 3. [Deep Embedded Clustering](deep-embedded-clustering)
 
-The [examples](examples) directory contains default distributed PyTorch and Apache Spark files.
+[examples](examples) :: directory contains default distributed PyTorch and Apache Spark files.  
+[docs](docs) :: final results and report with powerpoint presentation.
